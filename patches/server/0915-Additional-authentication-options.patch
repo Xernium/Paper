@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: FivePB <admin@fivepb.me>
+Date: Thu, 16 Jun 2022 21:30:59 +0200
+Subject: [PATCH] Additional authentication options
+
+This patch adds additional authentication options to allow deprecated
+or legacy authentication functions to work regardless of 1.19 changes.
+If you don't know what these options do, chances are you don't need them.
+
+diff --git a/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+index 039b47e19d672ec9066c41fcc6342523992bf7b6..561196dfca1061fb43c35561f2940fa4044448ad 100644
+--- a/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+@@ -72,12 +72,22 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener
+     private int velocityLoginMessageId = -1; // Paper - Velocity support
+     public boolean iKnowThisMayNotBeTheBestIdeaButPleaseDisableUsernameValidation = false; // Paper - username validation overriding
+ 
++    // Paper start - Additional auth options
++    private final boolean forceAuthenticationDowngrade;
++    private final boolean forceKeyAuthentication;
++    // Paper end
++
+     public ServerLoginPacketListenerImpl(MinecraftServer server, Connection connection) {
+         this.state = ServerLoginPacketListenerImpl.State.HELLO;
+         this.serverId = "";
+         this.server = server;
+         this.connection = connection;
+         this.nonce = Ints.toByteArray(ServerLoginPacketListenerImpl.RANDOM.nextInt());
++        // Paper start - Additional auth options
++        this.forceAuthenticationDowngrade = Boolean.getBoolean("auth.forceInsecureDowngrade");
++        this.forceKeyAuthentication = System.getProperties().containsKey("auth.forceSecureProfiles")
++            ? Boolean.getBoolean("auth.forceSecureProfiles") : this.server.enforceSecureProfile();
++        // Paper end
+     }
+ 
+     public void tick() {
+@@ -297,7 +307,7 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener
+         // Paper end - validate usernames
+ 
+         try {
+-            this.playerProfilePublicKey = ServerLoginPacketListenerImpl.validatePublicKey(packet, this.server.getServiceSignatureValidator(), this.server.enforceSecureProfile());
++            this.playerProfilePublicKey = ServerLoginPacketListenerImpl.validatePublicKey(packet, this.server.getServiceSignatureValidator(), forceKeyAuthentication); // Paper - additional auth options
+         } catch (ServerLoginPacketListenerImpl.PublicKeyParseException loginlistener_a) {
+             //ServerLoginPacketListenerImpl.LOGGER.error(loginlistener_a.getMessage(), loginlistener_a.getCause()); // Paper - unnecessary stacktrace
+             if (!this.connection.isMemoryConnection()) {
+@@ -363,7 +373,7 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener
+         try {
+             PrivateKey privatekey = this.server.getKeyPair().getPrivate();
+ 
+-            if (this.playerProfilePublicKey != null) {
++            if (this.playerProfilePublicKey != null && !forceAuthenticationDowngrade) { // Paper - Additional auth options
+                 if (!packet.isChallengeSignatureValid(this.nonce, this.playerProfilePublicKey)) {
+                     throw new IllegalStateException("Protocol error");
+                 }
