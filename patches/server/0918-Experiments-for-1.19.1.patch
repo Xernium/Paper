@@ -1,0 +1,138 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: FivePB <admin@fivepb.me>
+Date: Sat, 25 Jun 2022 18:24:26 +0200
+Subject: [PATCH] Experiments for 1.19.1
+
+
+diff --git a/src/main/java/net/minecraft/DetectedVersion.java b/src/main/java/net/minecraft/DetectedVersion.java
+index 09bd96a04f93f4f3300bafefaf07e9f92087fcff..6bc02b2f7948bc49530358a808b43644ead27120 100644
+--- a/src/main/java/net/minecraft/DetectedVersion.java
++++ b/src/main/java/net/minecraft/DetectedVersion.java
+@@ -29,23 +29,26 @@ public class DetectedVersion implements WorldVersion {
+ 
+     private DetectedVersion() {
+         this.id = UUID.randomUUID().toString().replaceAll("-", "");
+-        this.name = "1.19";
++        this.name = "1.19.1";
+         this.stable = true;
+         this.worldVersion = new DataVersion(3105, "main");
+         this.protocolVersion = SharedConstants.getProtocolVersion();
+         this.resourcePackVersion = 9;
+         this.dataPackVersion = 10;
+         this.buildTime = new Date();
+-        this.releaseTarget = "1.19";
++        this.releaseTarget = "1.19.1";
+     }
+ 
+     private DetectedVersion(JsonObject json) {
+         this.id = GsonHelper.getAsString(json, "id");
+-        this.name = GsonHelper.getAsString(json, "name");
+-        this.releaseTarget = GsonHelper.getAsString(json, "release_target");
++        this.name = SharedConstants.VERSION_STRING;
++        //this.name = GsonHelper.getAsString(json, "name");
++        //this.releaseTarget = GsonHelper.getAsString(json, "release_target");
++        this.releaseTarget = SharedConstants.RELEASE_TARGET;
+         this.stable = GsonHelper.getAsBoolean(json, "stable");
+         this.worldVersion = new DataVersion(GsonHelper.getAsInt(json, "world_version"), GsonHelper.getAsString(json, "series_id", DataVersion.MAIN_SERIES));
+-        this.protocolVersion = GsonHelper.getAsInt(json, "protocol_version");
++        //this.protocolVersion = GsonHelper.getAsInt(json, "protocol_version");
++        this.protocolVersion = SharedConstants.RELEASE_NETWORK_PROTOCOL_VERSION;
+         JsonObject jsonObject = GsonHelper.getAsJsonObject(json, "pack_version");
+         this.resourcePackVersion = GsonHelper.getAsInt(jsonObject, "resource");
+         this.dataPackVersion = GsonHelper.getAsInt(jsonObject, "data");
+diff --git a/src/main/java/net/minecraft/SharedConstants.java b/src/main/java/net/minecraft/SharedConstants.java
+index 2ccfc91784d15af4a0dd2c305b423c4973801095..4d1780a1ca69fb1094be83bc11b0a9830f399beb 100644
+--- a/src/main/java/net/minecraft/SharedConstants.java
++++ b/src/main/java/net/minecraft/SharedConstants.java
+@@ -21,13 +21,13 @@ public class SharedConstants {
+     public static final String SERIES = "main";
+     /** @deprecated */
+     @Deprecated
+-    public static final String VERSION_STRING = "1.19";
++    public static final String VERSION_STRING = "1.19.1"; // Paper - version experiment
+     /** @deprecated */
+     @Deprecated
+-    public static final String RELEASE_TARGET = "1.19";
++    public static final String RELEASE_TARGET = "1.19.1"; // Paper - version experiment
+     /** @deprecated */
+     @Deprecated
+-    public static final int RELEASE_NETWORK_PROTOCOL_VERSION = 759;
++    public static final int RELEASE_NETWORK_PROTOCOL_VERSION = 760; // Paper - version experiment
+     /** @deprecated */
+     @Deprecated
+     public static final int SNAPSHOT_NETWORK_PROTOCOL_VERSION = 91;
+@@ -174,7 +174,7 @@ public class SharedConstants {
+     }
+ 
+     public static int getProtocolVersion() {
+-        return 759;
++        return 760;
+     }
+ 
+     public static boolean debugVoidTerrain(ChunkPos chunkPos) {
+diff --git a/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+index 039b47e19d672ec9066c41fcc6342523992bf7b6..f73d0e9a91541ac226584c66f22ade972fd4c7a4 100644
+--- a/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+@@ -9,6 +9,8 @@ import java.math.BigInteger;
+ import java.net.InetAddress;
+ import java.net.InetSocketAddress;
+ import java.net.SocketAddress;
++import java.nio.ByteBuffer;
++import java.nio.ByteOrder;
+ import java.security.PrivateKey;
+ import java.util.Optional;
+ import java.util.UUID;
+@@ -296,15 +298,23 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener
+         }
+         // Paper end - validate usernames
+ 
++        // Paper start - version experiment
+         try {
+-            this.playerProfilePublicKey = ServerLoginPacketListenerImpl.validatePublicKey(packet, this.server.getServiceSignatureValidator(), this.server.enforceSecureProfile());
++            if (packet.publicKey().isEmpty() && this.server.enforceSecureProfile())
++                throw new ServerLoginPacketListenerImpl.PublicKeyParseException(ServerLoginPacketListenerImpl.MISSING_PROFILE_PUBLIC_KEY);
++            this.playerProfilePublicKey = ProfilePublicKey.createTrusted(packet.publicKey().get());
++            //this.playerProfilePublicKey = ServerLoginPacketListenerImpl.validatePublicKey(packet, this.server.getServiceSignatureValidator(), this.server.enforceSecureProfile());
+         } catch (ServerLoginPacketListenerImpl.PublicKeyParseException loginlistener_a) {
+             //ServerLoginPacketListenerImpl.LOGGER.error(loginlistener_a.getMessage(), loginlistener_a.getCause()); // Paper - unnecessary stacktrace
+             if (!this.connection.isMemoryConnection()) {
+                 this.disconnect(loginlistener_a.getComponent());
+                 return;
+             }
++        } catch (CryptException e) {
++            this.disconnect(INVALID_PUBLIC_KEY);
++            return;
+         }
++        // Paper end - version experiment
+ 
+         GameProfile gameprofile = this.server.getSingleplayerProfile();
+ 
+@@ -392,6 +402,27 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener
+                 try {
+                     ServerLoginPacketListenerImpl.this.gameProfile = ServerLoginPacketListenerImpl.this.server.getSessionService().hasJoinedServer(new GameProfile((UUID) null, gameprofile.getName()), s, this.getAddress());
+                     if (ServerLoginPacketListenerImpl.this.gameProfile != null) {
++                        if (ServerLoginPacketListenerImpl.this.playerProfilePublicKey != null) {
++                            try {
++                                ProfilePublicKey.Data data = ServerLoginPacketListenerImpl.this.playerProfilePublicKey.data();
++                                byte[] keyBytes = data.key().getEncoded();
++                                byte[] toVerify = new byte[keyBytes.length + 24];
++                                UUID uuid = ServerLoginPacketListenerImpl.this.gameProfile.getId();
++                                ByteBuffer fixedDataSet = ByteBuffer.wrap(toVerify).order(ByteOrder.BIG_ENDIAN);
++                                fixedDataSet.putLong(uuid.getMostSignificantBits());
++                                fixedDataSet.putLong(uuid.getLeastSignificantBits());
++                                fixedDataSet.putLong(data.expiresAt().toEpochMilli());
++                                fixedDataSet.put(keyBytes);
++                                if (!ServerLoginPacketListenerImpl.this.server.getServiceSignatureValidator().validate(toVerify, data.keySignature())) {
++                                    throw new PublicKeyParseException(ServerLoginPacketListenerImpl.INVALID_PUBLIC_KEY);
++                                }
++
++                            } catch (PublicKeyParseException e) {
++                                ServerLoginPacketListenerImpl.this.disconnect(e.getComponent());
++                                return;
++                            }
++                        }
++
+                         // CraftBukkit start - fire PlayerPreLoginEvent
+                         if (!ServerLoginPacketListenerImpl.this.connection.isConnected()) {
+                             return;
