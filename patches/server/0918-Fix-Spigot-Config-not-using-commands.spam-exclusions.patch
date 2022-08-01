@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Doc <nachito94@msn.com>
+Date: Sun, 17 Jul 2022 11:49:43 -0400
+Subject: [PATCH] Fix Spigot Config not using commands.spam-exclusions
+
+
+diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index b3303fa3daf4dca2dcd5482eb02d7fc57fbcd528..5b6da022f276f025c94ee0997ded64f44766c356 100644
+--- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -2573,7 +2573,7 @@ public class ServerGamePacketListenerImpl implements ServerPlayerConnection, Tic
+         }
+         // Spigot end
+         // this.chatSpamTickCount += 20;
+-        if (this.chatSpamTickCount.addAndGet(20) > 200 && !this.server.getPlayerList().isOp(this.player.getGameProfile())) {
++        if (counted && this.chatSpamTickCount.addAndGet(20) > 200 && !this.server.getPlayerList().isOp(this.player.getGameProfile())) { // Paper - exclude from SpigotConfig.spamExclusions
+             // CraftBukkit end
+             this.disconnect(Component.translatable("disconnect.spam"), org.bukkit.event.player.PlayerKickEvent.Cause.SPAM); // Paper - kick event cause
+         }
